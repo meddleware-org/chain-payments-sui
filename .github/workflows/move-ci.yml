@@ -30,6 +30,9 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install Sui CLI (testnet channel)
+        # suiup looks the release up through the GitHub API; unauthenticated calls share the runner's rate limit.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           suiup install sui@testnet-v1.81.0
           suiup switch sui@testnet-v1.81.0
