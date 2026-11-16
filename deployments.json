@@ -1,0 +1,17 @@
+{
+  "testnet": {
+    "packageId": "0x5f67109c6b436fc0c0415d7f3e63ca10d374d8c4bb5e3b1f087cabb1c785bc14",
+    "upgradeCap": "0x3f6ec244c5807b4a241b02315b66073ebb1f2799c476a6e898748a453c54eea1",
+    "publishDigest": "aDjUeNf6NwNum6ZEyN3HTdzUQ6pEoAyMMcr6dccTVZV",
+    "publisher": "0xa991ae11b0785718cd3ad1c616e804a4c083f431b3144bb845bdec651164864a",
+    "publishedAt": "2026-11-16T16:03:41Z",
+    "merchants": [
+      {
+        "merchantId": "0x30b6d544652d35d4a481fa7e45adf8e514b9ae1596377e837b6fdf36d967dae8",
+        "merchantCap": "0xef89acfe8b55f840cf97e4a0fb91eaea4fba68c46bd6e2ce0d3ac860678171e8",
+        "recipient": "0xa991ae11b0785718cd3ad1c616e804a4c083f431b3144bb845bdec651164864a",
+        "note": "throwaway test merchant: its quote key is the public TEST key (seed 0x01 * 32, tests/vectors.json); never used for real payments. Live check tx 7AkSLeZfxX2qURL2oHYmKkf3AKNaunJBJLski7TzGUYR."
+      }
+    ]
+  }
+}

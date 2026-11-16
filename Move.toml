@@ -1,0 +1,10 @@
+[package]
+edition = "2024"
+name = "chain_payments"
+version = "0.0.1"
+license = "0BSD"
+# No `published-at`: publications are recorded in Published.toml (Sui >= 1.80) and deployments.json.
+
+[dependencies]
+
+[addresses]

@@ -1,0 +1,71 @@
+name: Move CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # The release workflow runs the same checks on the tagged commit.
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  DO_NOT_TRACK: "1"
+
+jobs:
+  test:
+    name: Move tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install suiup
+        run: |
+          curl -fsSLo /tmp/suiup.tgz "https://github.com/MystenLabs/suiup/releases/download/v0.0.14/suiup-Linux-musl-x86_64.tar.gz"
+          echo "c0b9fea95d52c4c5855478c3ee56e58e446614f32300dbd41fcc637a2e09878a  /tmp/suiup.tgz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin" && tar -xzf /tmp/suiup.tgz -C "$HOME/.local/bin" suiup
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Sui CLI (testnet channel)
+        run: |
+          suiup install sui@testnet-v1.81.0
+          suiup switch sui@testnet-v1.81.0
+
+      - name: Verify Sui version and binary checksum
+        run: |
+          sui --version
+          # The release asset suiup downloads is not checksum-verified by suiup itself: pin the binary.
+          echo "c86c0481a44174dfa17af89e71292d6fba5df267c66722ae6797e8793a22f7f1  $(command -v sui)" | sha256sum -c -
+
+      - name: Build (lints on, warnings are errors)
+        run: sui move build --build-env testnet --lint --warnings-are-errors
+
+      - name: Test with coverage (every module at 100%)
+        run: |
+          sui move test --build-env testnet --coverage
+          sui move coverage summary | tee "$RUNNER_TEMP/coverage.txt"
+          grep -q "% Module coverage:" "$RUNNER_TEMP/coverage.txt"
+          awk '/% Module coverage:/ { if ($NF + 0 < 100) bad = 1 } END { exit bad }' "$RUNNER_TEMP/coverage.txt"
+
+  shellcheck:
+    name: shellcheck (ops scripts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # shellcheck is preinstalled on the GitHub-hosted Ubuntu runners.
+      - name: shellcheck
+        run: shellcheck -x -P SCRIPTDIR scripts/*.sh
+
+  vectors:
+    name: Quote vectors are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Regenerate and compare
+        run: |
+          pip install --user cryptography==41.0.7
+          python3 -I scripts/gen-test-vectors.py
+          git diff --exit-code tests/vectors.json tests/vectors.move

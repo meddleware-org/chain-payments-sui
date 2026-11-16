@@ -1,0 +1,5 @@
+build/
+traces/
+node_modules/
+*.bak
+.coverage_map.mvcov
