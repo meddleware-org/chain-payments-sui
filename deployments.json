@@ -11,6 +11,12 @@
         "merchantCap": "0xef89acfe8b55f840cf97e4a0fb91eaea4fba68c46bd6e2ce0d3ac860678171e8",
         "recipient": "0xa991ae11b0785718cd3ad1c616e804a4c083f431b3144bb845bdec651164864a",
         "note": "throwaway test merchant: its quote key is the public TEST key (seed 0x01 * 32, tests/vectors.json); never used for real payments. Live check tx 7AkSLeZfxX2qURL2oHYmKkf3AKNaunJBJLski7TzGUYR."
+      },
+      {
+        "merchantId": "0x29d6c7619957e0bde34becad3f8376eedd98f90f404b18915660dc3efc4b63f8",
+        "merchantCap": "0xc57f292e4dfe4ce74614b3ae442448c753d0685fc9b8ebfdbf487e04096c87d0",
+        "recipient": "0xa991ae11b0785718cd3ad1c616e804a4c083f431b3144bb845bdec651164864a",
+        "note": "Link in Bio (merchant #1 of the testnet Chain Payments service). Quote key = k8s/clusters/meddleware-org/chain-payments/chain-payments-keys.enc.yaml in the instance workspace (public c80751d8...2e8c). Testnet minimums 0.001 SUI and 0.001 USDC per unit."
       }
     ]
   }
