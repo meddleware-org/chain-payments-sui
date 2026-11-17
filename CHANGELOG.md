@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased (source only; the testnet package is still 0.0.1)
+## Unreleased (tests only; no package change)
 
 - Ten negative quote vectors (`negative` in tests/vectors.json): the basic quote's signature with each field changed, and
   a truncated signature; `every_negative_vector_fails_verification` checks them all.
+
+## 0.0.2 — 2026-11-17 (testnet package `0x610cf31f…6af2`, published fresh with its UpgradeCap burned)
 - Platform fee: `pay<T>` takes the shared `PlatformConfig` (its first argument) and sends 0.2 % of the quoted amount,
   rounded down, to the platform treasury; the merchant's recipient gets the rest and the payer still pays exactly the
   quote. `PlatformAdminCap` sets the rate (at most 1 %, `EFeeTooHigh` = 21) and the treasury (never zero), each emitting
