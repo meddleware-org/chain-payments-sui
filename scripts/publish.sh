@@ -131,6 +131,13 @@ if [[ "$mode" == publish ]]; then
     echo "${net} already records package ${existing}; set REPLACE_PUBLISHED=1 to publish a new one over it" >&2
     exit 2
   fi
+  if [[ "$net" != localnet && -f Published.toml ]] && grep -q "^\[published\.${net}\]" Published.toml; then
+    # A fresh package, not an upgrade: the CLI must not see the old publication (it stays in git history and in
+    # deployments.json as previousPackageId).
+    tmp="$(mktemp)"
+    awk -v sec="[published.${net}]" '$0 == sec { skip = 1; next } /^\[/ { skip = 0 } !skip' Published.toml > "$tmp"
+    mv "$tmp" Published.toml
+  fi
   if [[ "$net" == localnet ]]; then
     # The package defines testnet and mainnet only; a localnet publication is a test publication, recorded in a
     # throwaway pubfile so Published.toml is never touched (localnet is regenerated at will).
@@ -159,7 +166,9 @@ if [[ "$mode" == publish ]]; then
   # A fresh package replaces the whole record of the network (its merchants belong to the old package).
   jq --arg n "$net" --arg p "$pkg" --arg c "$cap" --arg g "$config" --arg a "$admin" --arg d "$digest" --arg s "$signer" \
     --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '.[$n] = {packageId: $p, upgradeCap: $c, platformConfig: $g, platformAdminCap: $a, platformTreasury: $s, publishDigest: $d, publisher: $s, publishedAt: $t}' deployments.json > "$tmp"
+    --arg o "${existing:-}" \
+    '.[$n] = ({packageId: $p, upgradeCap: $c, platformConfig: $g, platformAdminCap: $a, platformTreasury: $s, publishDigest: $d, publisher: $s, publishedAt: $t}
+              + (if $o == "" then {} else {previousPackageId: $o} end))' deployments.json > "$tmp"
   mv "$tmp" deployments.json
   echo "published ${net}: package ${pkg} (UpgradeCap ${cap}, PlatformConfig ${config}, tx ${digest})"
   if [[ -n "${PLATFORM_TREASURY:-}" && "$PLATFORM_TREASURY" != "$signer" ]]; then

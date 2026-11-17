@@ -1,22 +1,27 @@
 {
   "testnet": {
-    "packageId": "0x5f67109c6b436fc0c0415d7f3e63ca10d374d8c4bb5e3b1f087cabb1c785bc14",
-    "upgradeCap": "0x3f6ec244c5807b4a241b02315b66073ebb1f2799c476a6e898748a453c54eea1",
-    "publishDigest": "aDjUeNf6NwNum6ZEyN3HTdzUQ6pEoAyMMcr6dccTVZV",
+    "packageId": "0x610cf31fa9455893f1d0d139e6aa6ca4559a9f2acf07391c0d47c4e86a9c6af2",
+    "platformConfig": "0x7e3b9a5c5346850d0703df88fcab044644c3e92b84a65e59b4661ef0e7b96106",
+    "platformAdminCap": "0x6e01aac84fa01a2ada90982df32c1090fc2dd9bacbcd71a2e17e4963448da162",
+    "platformTreasury": "0xa991ae11b0785718cd3ad1c616e804a4c083f431b3144bb845bdec651164864a",
+    "publishDigest": "3GNPgAnoRpCxk1zXeBU5PggDiRRQZzy2ARGSyuFckiLE",
     "publisher": "0xa991ae11b0785718cd3ad1c616e804a4c083f431b3144bb845bdec651164864a",
-    "publishedAt": "2026-11-16T16:03:41Z",
+    "publishedAt": "2026-11-17T14:19:18Z",
+    "previousPackageId": "0x5f67109c6b436fc0c0415d7f3e63ca10d374d8c4bb5e3b1f087cabb1c785bc14",
+    "immutable": true,
+    "burnDigest": "AXBAZtAHcUrENbwb92wTbbz37brp1AWxbtALwPfBGkP",
     "merchants": [
       {
-        "merchantId": "0x30b6d544652d35d4a481fa7e45adf8e514b9ae1596377e837b6fdf36d967dae8",
-        "merchantCap": "0xef89acfe8b55f840cf97e4a0fb91eaea4fba68c46bd6e2ce0d3ac860678171e8",
+        "merchantId": "0x1015d740c7f4261bae407bf62559eea4e6f76a97377c7149febf49ac9520d814",
+        "merchantCap": "0x47fe7939dfaefed2add05f3018110bc75504e2f446e2b1b13a9e6c249c4a63e6",
         "recipient": "0xa991ae11b0785718cd3ad1c616e804a4c083f431b3144bb845bdec651164864a",
-        "note": "throwaway test merchant: its quote key is the public TEST key (seed 0x01 * 32, tests/vectors.json); never used for real payments. Live check tx 7AkSLeZfxX2qURL2oHYmKkf3AKNaunJBJLski7TzGUYR."
+        "note": "Link in Bio (merchant #1 of the testnet Chain Payments service). Quote key = the service's (public c80751d8...2e8c, read from the previous merchant on-chain). Minimums per README 'Choosing minimums' at SUI = GBP 0.56 on 2026-11-17: 1.3 SUI and 3.5 USDC per month."
       },
       {
-        "merchantId": "0x29d6c7619957e0bde34becad3f8376eedd98f90f404b18915660dc3efc4b63f8",
-        "merchantCap": "0xc57f292e4dfe4ce74614b3ae442448c753d0685fc9b8ebfdbf487e04096c87d0",
+        "merchantId": "0xd92a3ce208124219667d5b17a939617cc4dc816c093b91fd80f1f164e635d5e5",
+        "merchantCap": "0x0e6dcc95ae7cf4fd4e159d109bc0108172ff8770c37ee65c65758804d5ce56f2",
         "recipient": "0xa991ae11b0785718cd3ad1c616e804a4c083f431b3144bb845bdec651164864a",
-        "note": "Link in Bio (merchant #1 of the testnet Chain Payments service). Quote key = k8s/clusters/meddleware-org/chain-payments/chain-payments-keys.enc.yaml in the instance workspace (public c80751d8...2e8c). Testnet minimums 0.001 SUI and 0.001 USDC per unit."
+        "note": "throwaway test merchant for scripts/e2e-testnet.sh: its quote key is the public TEST key (seed 0x01 * 32, tests/vectors.json); never used for real payments."
       }
     ]
   }
