@@ -35,8 +35,8 @@ MULTISIG_ADDRESS="${MULTISIG_ADDRESS:?set MULTISIG_ADDRESS}"
 [[ "$MULTISIG_ADDRESS" =~ ^0x[0-9a-fA-F]{64}$ ]] || { warn "MULTISIG_ADDRESS must be 0x + 64 hex"; exit 2; }
 
 rec() { jq -r --arg n "$NETWORK" "$1" deployments.json; }
-PACKAGE_ID="$(rec '.[$n].packageId // empty')"
-ADMIN_CAP="$(rec '.[$n].platformAdminCap // empty')"
+PACKAGE_ID="$(rec ".[\$n].packageId // empty")"
+ADMIN_CAP="$(rec ".[\$n].platformAdminCap // empty")"
 [[ -n "$PACKAGE_ID" && -n "$ADMIN_CAP" ]] || { warn "deployments.json has no ${NETWORK} package or PlatformAdminCap"; exit 2; }
 
 env="$(sui client active-env 2>/dev/null || true)"
