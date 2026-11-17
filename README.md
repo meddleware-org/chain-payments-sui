@@ -47,6 +47,17 @@ Every release is a fresh package with its UpgradeCap burned: nobody, the publish
 and payers rely on. A fix means a new package, new merchants on it and a service configured for it. The old package keeps
 serving the subscriptions it recorded, and they are still readable through `paid_until`.
 
+## Platform fee
+
+Each payment pays a platform fee out of the quoted amount, so the payer always pays exactly the quote and the merchant's
+recipient receives the rest. The fee is 0.2 % (20 basis points), rounded down, and is sent to the treasury in the shared
+`PlatformConfig` within the same transaction. No fee coin is made when the fee rounds to zero. The holder of
+`PlatformAdminCap` can change the rate and the treasury, each change emitting `PlatformConfigChanged`, but the rate can
+never go above 1 % (`MAX_FEE_BPS`). That ceiling is part of the immutable code. `Paid.platform_fee` records each fee.
+
+`publish.sh` records `platformConfig`, `platformAdminCap` and `platformTreasury` in `deployments.json`. `PLATFORM_TREASURY`
+sets the treasury at publish; mainnet requires it.
+
 ## Choosing minimums
 
 `set_accepted` refuses zero. The minimum that matters is the merchant's floor per unit, in each coin's smallest unit: it is

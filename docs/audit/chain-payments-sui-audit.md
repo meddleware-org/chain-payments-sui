@@ -672,6 +672,25 @@ neither mode is a custody step. The custody scripts that will need a dry run are
 - MAY offer `pay` with a `Coin<T>` the caller already split, and document that the change coin is then never created (it is
   today: `destroy_zero`).
 
+## Addendum 2026-11-17: the platform fee (maintainer's decision)
+
+The maintainer asked for 0.2 %, plus the platform's cost of a payment if it has one. Per `docs/economics/COST_MODEL.md`
+§5, a wallet-to-fullnode action has a variable platform cost of 0. The payer's gas covers the whole transaction,
+including creating the fee coin, and the service's checks run on the fixed-cost cluster. So the rate is 20 bps, with no
+fixed part. This was reviewed against the Move lens:
+
+- **Exactness.** The payer pays exactly the quote: the fee is taken out of `amount` after the signature and minimum
+  checks, which still apply to the gross amount.
+- **Arithmetic.** `fee = amount × bps / 10 000` in u128; it is at most 1 % of `amount`, so the split cannot underflow.
+  A fee rounding to zero makes no coin.
+- **Treasury.** It is never the zero address.
+- **Ceiling.** The 1 % ceiling is a constant of immutable code, so merchants can rely on it; the rate and treasury
+  setters need `PlatformAdminCap` and emit `PlatformConfigChanged` with old and new values.
+- **Custody.** `PlatformAdminCap` belongs with the custody multisig on mainnet (FU-0120). Its theft could at worst raise
+  the fee to 1 % or redirect future fees, never touch a merchant's recipient or a payer's change.
+- **Tests.** Split values, rounding, the ceiling, a zero rate, the treasury refusal and the events (45 tests); a localnet
+  rehearsal of publish, `set_platform_treasury`, the burn and a setter call after the burn.
+
 ## Open questions (`OQ#`)
 
 - **OQ1** — DECIDED 2026-11-17 (maintainer): typed events. Every governance change emits its own event with the old and

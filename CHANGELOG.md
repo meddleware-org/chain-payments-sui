@@ -2,6 +2,10 @@
 
 ## Unreleased (source only; the testnet package is still 0.0.1)
 
+- Platform fee: `pay<T>` takes the shared `PlatformConfig` (its first argument) and sends 0.2 % of the quoted amount,
+  rounded down, to the platform treasury; the merchant's recipient gets the rest and the payer still pays exactly the
+  quote. `PlatformAdminCap` sets the rate (at most 1 %, `EFeeTooHigh` = 21) and the treasury (never zero), each emitting
+  `PlatformConfigChanged`. `Paid` gains `platform_fee`. `publish.sh` records both objects and takes `PLATFORM_TREASURY`.
 - Release policy: every release is a fresh package whose UpgradeCap is burned. `publish.sh` burns it on mainnet as part of
   publishing (typed `BURN`) and offers `--burn-upgrade-cap` elsewhere; the burn is recorded only once the cap is gone.
 - Typed governance events with old and new values (`RecipientProposed`, `RecipientProposalCancelled`, `RecipientChanged`,

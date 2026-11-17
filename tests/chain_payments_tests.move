@@ -1,7 +1,7 @@
 #[test_only]
 module chain_payments::chain_payments_tests;
 
-use chain_payments::chain_payments::{Self, Merchant, MerchantCap};
+use chain_payments::chain_payments::{Self, Merchant, MerchantCap, PlatformConfig, PlatformAdminCap};
 use chain_payments::vectors;
 use sui::clock::{Self, Clock};
 use sui::coin::{Self, Coin};
@@ -28,6 +28,8 @@ fun setup(): (Scenario, Clock) {
         chain_payments::set_accepted<SUI>(&cap, &mut m, 1000);
         ts::return_shared(m);
         s.return_to_sender(cap);
+        // After the merchant: its id is the one the vectors were signed for.
+        chain_payments::init_for_testing(s.ctx());
     };
     let mut clock = clock::create_for_testing(s.ctx());
     clock.set_for_testing(1000);
@@ -41,8 +43,10 @@ fun coin(s: &mut Scenario, value: u64): Coin<SUI> {
 fun pay_basic(s: &mut Scenario, clock: &Clock, value: u64) {
     let c = coin(s, value);
     let mut m = s.take_shared<Merchant>();
-    chain_payments::pay<SUI>(&mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, clock, s.ctx());
+    let cfg = s.take_shared<PlatformConfig>();
+    chain_payments::pay<SUI>(&cfg, &mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, clock, s.ctx());
     ts::return_shared(m);
+    ts::return_shared(cfg);
 }
 
 #[test]
@@ -72,9 +76,13 @@ fun pays_exactly_and_returns_the_change() {
     pay_basic(&mut s, &clock, 7000);
     s.next_tx(PAYER);
     {
+        // 0.2 % of 5000 to the platform treasury (the publisher, OWNER, in tests), the rest to the merchant.
         let to_recipient = s.take_from_address<Coin<SUI>>(RECIPIENT);
-        assert!(to_recipient.value() == 5000);
+        assert!(to_recipient.value() == 4990);
         ts::return_to_address(RECIPIENT, to_recipient);
+        let to_treasury = s.take_from_address<Coin<SUI>>(OWNER);
+        assert!(to_treasury.value() == 10);
+        ts::return_to_address(OWNER, to_treasury);
         let change = s.take_from_sender<Coin<SUI>>();
         assert!(change.value() == 2000);
         s.return_to_sender(change);
@@ -109,9 +117,11 @@ fun anyone_may_pay_for_a_reference_and_periods_add_up() {
     {
         let c = coin(&mut s, 2500);
         let mut m = s.take_shared<Merchant>();
-        chain_payments::pay<SUI>(&mut m, b"s2", 2500, 1, MONTH_MS, b"acct1", 61_000, b"n2", vectors::second_signature(), c, &clock, s.ctx());
+        let cfg = s.take_shared<PlatformConfig>();
+        chain_payments::pay<SUI>(&cfg, &mut m, b"s2", 2500, 1, MONTH_MS, b"acct1", 61_000, b"n2", vectors::second_signature(), c, &clock, s.ctx());
         assert!(chain_payments::paid_until(&m, b"acct1") == 1000 + 3 * MONTH_MS);
         ts::return_shared(m);
+        ts::return_shared(cfg);
     };
     clock.destroy_for_testing();
     s.end();
@@ -124,9 +134,11 @@ fun a_one_off_payment_extends_no_ledger() {
     {
         let c = coin(&mut s, 5000);
         let mut m = s.take_shared<Merchant>();
-        chain_payments::pay<SUI>(&mut m, b"s4", 5000, 1, 0, b"", 61_000, b"n4", vectors::one_off_signature(), c, &clock, s.ctx());
+        let cfg = s.take_shared<PlatformConfig>();
+        chain_payments::pay<SUI>(&cfg, &mut m, b"s4", 5000, 1, 0, b"", 61_000, b"n4", vectors::one_off_signature(), c, &clock, s.ctx());
         assert!(chain_payments::paid_until(&m, b"") == 0);
         ts::return_shared(m);
+        ts::return_shared(cfg);
     };
     clock.destroy_for_testing();
     s.end();
@@ -158,8 +170,10 @@ fun a_quote_valid_for_too_long_is_refused() {
     {
         let c = coin(&mut s, 5000);
         let mut m = s.take_shared<Merchant>();
-        chain_payments::pay<SUI>(&mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 1000 + 60 * 60 * 1000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
+        let cfg = s.take_shared<PlatformConfig>();
+        chain_payments::pay<SUI>(&cfg, &mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 1000 + 60 * 60 * 1000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
         ts::return_shared(m);
+        ts::return_shared(cfg);
     };
     abort 99
 }
@@ -171,8 +185,10 @@ fun a_changed_amount_breaks_the_signature() {
     {
         let c = coin(&mut s, 5000);
         let mut m = s.take_shared<Merchant>();
-        chain_payments::pay<SUI>(&mut m, b"s1", 4000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
+        let cfg = s.take_shared<PlatformConfig>();
+        chain_payments::pay<SUI>(&cfg, &mut m, b"s1", 4000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
         ts::return_shared(m);
+        ts::return_shared(cfg);
     };
     abort 99
 }
@@ -184,8 +200,10 @@ fun a_changed_reference_breaks_the_signature() {
     {
         let c = coin(&mut s, 5000);
         let mut m = s.take_shared<Merchant>();
-        chain_payments::pay<SUI>(&mut m, b"s1", 5000, 2, MONTH_MS, b"someone-else", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
+        let cfg = s.take_shared<PlatformConfig>();
+        chain_payments::pay<SUI>(&cfg, &mut m, b"s1", 5000, 2, MONTH_MS, b"someone-else", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
         ts::return_shared(m);
+        ts::return_shared(cfg);
     };
     abort 99
 }
@@ -197,8 +215,10 @@ fun a_coin_type_not_accepted_is_refused() {
     {
         let c = coin::mint_for_testing<OTHER>(5000, s.ctx());
         let mut m = s.take_shared<Merchant>();
-        chain_payments::pay<OTHER>(&mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
+        let cfg = s.take_shared<PlatformConfig>();
+        chain_payments::pay<OTHER>(&cfg, &mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
         ts::return_shared(m);
+        ts::return_shared(cfg);
     };
     abort 99
 }
@@ -242,8 +262,10 @@ fun the_ledger_cannot_run_too_far_ahead() {
     {
         let c = coin(&mut s, 30_000);
         let mut m = s.take_shared<Merchant>();
-        chain_payments::pay<SUI>(&mut m, b"s3", 30_000, 12, MONTH_MS, b"acct1", 61_000, b"n3", vectors::too_far_signature(), c, &clock, s.ctx());
+        let cfg = s.take_shared<PlatformConfig>();
+        chain_payments::pay<SUI>(&cfg, &mut m, b"s3", 30_000, 12, MONTH_MS, b"acct1", 61_000, b"n3", vectors::too_far_signature(), c, &clock, s.ctx());
         ts::return_shared(m);
+        ts::return_shared(cfg);
     };
     abort 99
 }
@@ -438,7 +460,8 @@ fun zero_units_are_refused() {
     s.next_tx(PAYER);
     let c = coin(&mut s, 5000);
     let mut m = s.take_shared<Merchant>();
-    chain_payments::pay<SUI>(&mut m, b"s1", 5000, 0, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
+    let cfg = s.take_shared<PlatformConfig>();
+    chain_payments::pay<SUI>(&cfg, &mut m, b"s1", 5000, 0, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
     abort 99
 }
 
@@ -448,7 +471,8 @@ fun more_units_than_the_limit_are_refused() {
     s.next_tx(PAYER);
     let c = coin(&mut s, 50_000);
     let mut m = s.take_shared<Merchant>();
-    chain_payments::pay<SUI>(&mut m, b"s1", 50_000, 13, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
+    let cfg = s.take_shared<PlatformConfig>();
+    chain_payments::pay<SUI>(&cfg, &mut m, b"s1", 50_000, 13, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
     abort 99
 }
 
@@ -458,7 +482,8 @@ fun an_empty_session_is_refused() {
     s.next_tx(PAYER);
     let c = coin(&mut s, 5000);
     let mut m = s.take_shared<Merchant>();
-    chain_payments::pay<SUI>(&mut m, b"", 5000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
+    let cfg = s.take_shared<PlatformConfig>();
+    chain_payments::pay<SUI>(&cfg, &mut m, b"", 5000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
     abort 99
 }
 
@@ -468,8 +493,9 @@ fun an_old_merchant_version_refuses_payments() {
     s.next_tx(PAYER);
     let c = coin(&mut s, 5000);
     let mut m = s.take_shared<Merchant>();
+    let cfg = s.take_shared<PlatformConfig>();
     chain_payments::set_version_for_testing(&mut m, 0);
-    chain_payments::pay<SUI>(&mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
+    chain_payments::pay<SUI>(&cfg, &mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
     abort 99
 }
 
@@ -500,7 +526,8 @@ fun a_too_long_session_is_refused() {
     s.next_tx(PAYER);
     let c = coin(&mut s, 5000);
     let mut m = s.take_shared<Merchant>();
-    chain_payments::pay<SUI>(&mut m, x"6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161", 5000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
+    let cfg = s.take_shared<PlatformConfig>();
+    chain_payments::pay<SUI>(&cfg, &mut m, x"6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161", 5000, 2, MONTH_MS, b"acct1", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
     abort 99
 }
 
@@ -510,7 +537,8 @@ fun an_empty_nonce_is_refused() {
     s.next_tx(PAYER);
     let c = coin(&mut s, 5000);
     let mut m = s.take_shared<Merchant>();
-    chain_payments::pay<SUI>(&mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 61_000, b"", vectors::basic_signature(), c, &clock, s.ctx());
+    let cfg = s.take_shared<PlatformConfig>();
+    chain_payments::pay<SUI>(&cfg, &mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 61_000, b"", vectors::basic_signature(), c, &clock, s.ctx());
     abort 99
 }
 
@@ -520,7 +548,8 @@ fun a_too_long_nonce_is_refused() {
     s.next_tx(PAYER);
     let c = coin(&mut s, 5000);
     let mut m = s.take_shared<Merchant>();
-    chain_payments::pay<SUI>(&mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 61_000, x"6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161", vectors::basic_signature(), c, &clock, s.ctx());
+    let cfg = s.take_shared<PlatformConfig>();
+    chain_payments::pay<SUI>(&cfg, &mut m, b"s1", 5000, 2, MONTH_MS, b"acct1", 61_000, x"6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161", vectors::basic_signature(), c, &clock, s.ctx());
     abort 99
 }
 
@@ -530,7 +559,8 @@ fun a_too_long_reference_is_refused() {
     s.next_tx(PAYER);
     let c = coin(&mut s, 5000);
     let mut m = s.take_shared<Merchant>();
-    chain_payments::pay<SUI>(&mut m, b"s1", 5000, 2, MONTH_MS, x"6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
+    let cfg = s.take_shared<PlatformConfig>();
+    chain_payments::pay<SUI>(&cfg, &mut m, b"s1", 5000, 2, MONTH_MS, x"6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161", 61_000, b"n1", vectors::basic_signature(), c, &clock, s.ctx());
     abort 99
 }
 
@@ -552,7 +582,7 @@ fun zero_max_ahead_is_refused() {
 
 #[test, expected_failure(abort_code = chain_payments::EZeroMinimum)]
 fun a_zero_minimum_is_refused() {
-    let (mut s, clock) = setup();
+    let (mut s, _clock) = setup();
     s.next_tx(OWNER);
     let cap = s.take_from_sender<MerchantCap>();
     let mut m = s.take_shared<Merchant>();
@@ -595,6 +625,76 @@ fun governance_changes_emit_their_old_and_new_values() {
 
     ts::return_shared(m);
     s.return_to_sender(cap);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+fun the_platform_fee_rounds_down_has_a_ceiling_and_its_changes_are_events() {
+    let (mut s, clock) = setup();
+    s.next_tx(OWNER);
+    let admin = s.take_from_sender<PlatformAdminCap>();
+    let mut cfg = s.take_shared<PlatformConfig>();
+    assert!(chain_payments::platform_fee_bps(&cfg) == 20);
+    assert!(chain_payments::platform_treasury(&cfg) == OWNER);
+    assert!(chain_payments::platform_fee(&cfg, 5000) == 10);
+    // Below one unit of fee, nothing is taken.
+    assert!(chain_payments::platform_fee(&cfg, 499) == 0);
+    assert!(chain_payments::platform_fee(&cfg, 18_446_744_073_709_551_615) == 36_893_488_147_419_103);
+    chain_payments::set_platform_fee_bps(&admin, &mut cfg, chain_payments::max_fee_bps());
+    assert!(chain_payments::platform_fee(&cfg, 5000) == 50);
+    chain_payments::set_platform_fee_bps(&admin, &mut cfg, 0);
+    assert!(chain_payments::platform_fee(&cfg, 5000) == 0);
+    chain_payments::set_platform_treasury(&admin, &mut cfg, FRIEND);
+    assert!(chain_payments::platform_treasury(&cfg) == FRIEND);
+    assert!(sui::event::events_by_type<chain_payments::PlatformConfigChanged>().length() == 3);
+    ts::return_shared(cfg);
+    s.return_to_sender(admin);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test, expected_failure(abort_code = chain_payments::EFeeTooHigh)]
+fun the_platform_fee_cannot_exceed_its_ceiling() {
+    let (mut s, _clock) = setup();
+    s.next_tx(OWNER);
+    let admin = s.take_from_sender<PlatformAdminCap>();
+    let mut cfg = s.take_shared<PlatformConfig>();
+    chain_payments::set_platform_fee_bps(&admin, &mut cfg, chain_payments::max_fee_bps() + 1);
+    abort 99
+}
+
+#[test, expected_failure(abort_code = chain_payments::EBadRecipient)]
+fun the_platform_treasury_is_never_the_zero_address() {
+    let (mut s, _clock) = setup();
+    s.next_tx(OWNER);
+    let admin = s.take_from_sender<PlatformAdminCap>();
+    let mut cfg = s.take_shared<PlatformConfig>();
+    chain_payments::set_platform_treasury(&admin, &mut cfg, @0x0);
+    abort 99
+}
+
+#[test]
+fun a_zero_fee_sends_the_whole_amount_to_the_merchant() {
+    let (mut s, clock) = setup();
+    s.next_tx(OWNER);
+    {
+        let admin = s.take_from_sender<PlatformAdminCap>();
+        let mut cfg = s.take_shared<PlatformConfig>();
+        chain_payments::set_platform_fee_bps(&admin, &mut cfg, 0);
+        ts::return_shared(cfg);
+        s.return_to_sender(admin);
+    };
+    s.next_tx(PAYER);
+    pay_basic(&mut s, &clock, 5000);
+    s.next_tx(PAYER);
+    {
+        let to_recipient = s.take_from_address<Coin<SUI>>(RECIPIENT);
+        assert!(to_recipient.value() == 5000);
+        ts::return_to_address(RECIPIENT, to_recipient);
+        // No zero-value coin for the treasury.
+        assert!(!ts::has_most_recent_for_address<Coin<SUI>>(OWNER));
+    };
     clock.destroy_for_testing();
     s.end();
 }

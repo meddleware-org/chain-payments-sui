@@ -26,6 +26,10 @@
 #   USDC_MIN_PER_UNIT    default unset        (smallest USDC unit per unit; set it with USDC_TYPE to accept USDC)
 #   GAS_BUDGET           default 100000000
 #
+# Env for publishing:
+#   PLATFORM_TREASURY    where the platform fee (0.2 % of each payment by default) goes; default the publisher. Mainnet
+#                        requires it, and it must not be the deploy key (it is the entity's treasury, KEY_CUSTODY.md).
+#
 # Safety: the active `sui client` env must already be <network>; the chain identifier must match it; the sui CLI's
 # major.minor must equal the toolchain recorded in Published.toml (ALLOW_TOOLCHAIN_CHANGE=1 for a deliberate move); mainnet
 # needs EXPECTED_SIGNER (the active address must equal it) and MAINNET_CONFIRM=1. Publishing again over a recorded
@@ -56,6 +60,10 @@ fi
 if [[ "$net" == mainnet ]]; then
   [[ "${EXPECTED_SIGNER:-}" == "$signer" ]] || { echo "mainnet: EXPECTED_SIGNER must equal the active address (${signer})" >&2; exit 2; }
   [[ "${MAINNET_CONFIRM:-}" == 1 ]] || { echo "mainnet: set MAINNET_CONFIRM=1" >&2; exit 2; }
+  if [[ "$mode" == publish ]]; then
+    [[ "${PLATFORM_TREASURY:-}" =~ ^0x[0-9a-f]{64}$ && "${PLATFORM_TREASURY}" != "$signer" && ! "${PLATFORM_TREASURY}" =~ ^0x0{64}$ ]] \
+      || { echo "mainnet: PLATFORM_TREASURY must be the entity's treasury (full 0x address), not the deploy key" >&2; exit 2; }
+  fi
 fi
 
 [[ -f deployments.json ]] || echo '{}' > deployments.json
@@ -107,6 +115,11 @@ burn_upgrade_cap() {
   echo "${net}: package is immutable (UpgradeCap ${cap} burned, tx $(jq -r '.digest' <<< "$out"))"
 }
 
+if [[ -n "${PLATFORM_TREASURY:-}" ]]; then
+  [[ "$PLATFORM_TREASURY" =~ ^0x[0-9a-f]{64}$ && ! "$PLATFORM_TREASURY" =~ ^0x0{64}$ ]] \
+    || { echo "PLATFORM_TREASURY must be a full 0x + 64 lowercase hex address, not zero" >&2; exit 2; }
+fi
+
 if [[ "$mode" == --burn-upgrade-cap ]]; then
   burn_upgrade_cap
   exit 0
@@ -135,16 +148,31 @@ if [[ "$mode" == publish ]]; then
   rm -f "$errs"
   pkg="$(jq -r '.objectChanges[] | select(.type == "published") | .packageId' <<< "$out")"
   cap="$(created_of_type "$out" 0x2 package UpgradeCap)"
+  config="$(created_of_type "$out" "$pkg" chain_payments PlatformConfig)"
+  admin="$(created_of_type "$out" "$pkg" chain_payments PlatformAdminCap)"
   digest="$(jq -r '.digest // empty' <<< "$out")"
-  if [[ -z "$pkg" || -z "$cap" || -z "$digest" || "$pkg" == null || "$cap" == null ]]; then
-    echo "publish succeeded but the package, UpgradeCap or digest could not be read; record them by hand from: sui client tx-block ${digest:-<digest>} --json" >&2
+  if [[ -z "$pkg" || -z "$cap" || -z "$config" || -z "$admin" || -z "$digest" || "$pkg" == null || "$cap" == null ]]; then
+    echo "publish succeeded but the package, UpgradeCap, PlatformConfig, PlatformAdminCap or digest could not be read; record them by hand from: sui client tx-block ${digest:-<digest>} --json" >&2
     exit 1
   fi
   tmp="$(mktemp)"
-  jq --arg n "$net" --arg p "$pkg" --arg c "$cap" --arg d "$digest" --arg s "$signer" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '.[$n] = ((.[$n] // {}) + {packageId: $p, upgradeCap: $c, publishDigest: $d, publisher: $s, publishedAt: $t})' deployments.json > "$tmp"
+  # A fresh package replaces the whole record of the network (its merchants belong to the old package).
+  jq --arg n "$net" --arg p "$pkg" --arg c "$cap" --arg g "$config" --arg a "$admin" --arg d "$digest" --arg s "$signer" \
+    --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '.[$n] = {packageId: $p, upgradeCap: $c, platformConfig: $g, platformAdminCap: $a, platformTreasury: $s, publishDigest: $d, publisher: $s, publishedAt: $t}' deployments.json > "$tmp"
   mv "$tmp" deployments.json
-  echo "published ${net}: package ${pkg} (UpgradeCap ${cap}, tx ${digest})"
+  echo "published ${net}: package ${pkg} (UpgradeCap ${cap}, PlatformConfig ${config}, tx ${digest})"
+  if [[ -n "${PLATFORM_TREASURY:-}" && "$PLATFORM_TREASURY" != "$signer" ]]; then
+    res="$(sui client ptb --gas-budget "$GAS_BUDGET" --json \
+      --move-call "${pkg}::chain_payments::set_platform_treasury" "@${admin}" "@${config}" "@${PLATFORM_TREASURY}")" || res=""
+    if ! succeeded "$res"; then
+      echo "set_platform_treasury failed; resume with: sui client ptb --gas-budget ${GAS_BUDGET} --move-call ${pkg}::chain_payments::set_platform_treasury @${admin} @${config} @${PLATFORM_TREASURY}" >&2
+      exit 1
+    fi
+    tmp="$(mktemp)"
+    jq --arg n "$net" --arg t "$PLATFORM_TREASURY" '.[$n].platformTreasury = $t' deployments.json > "$tmp" && mv "$tmp" deployments.json
+    echo "  platform fees go to ${PLATFORM_TREASURY}"
+  fi
   if [[ "$net" == mainnet ]]; then burn_upgrade_cap; fi
   exit 0
 fi

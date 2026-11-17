@@ -53,6 +53,11 @@ const HARD_MAX_AHEAD_MS: u64 = 120 * 2_629_800_000;
 const HARD_MAX_UNITS: u64 = 120;
 /// Bounds on opaque identifiers.
 const MAX_ID_BYTES: u64 = 64;
+/// The platform fee on every payment, in basis points of the quoted amount: 0.2 %, out of the merchant's share (the
+/// payer always pays exactly the quote). The holder of `PlatformAdminCap` may change it, never above `MAX_FEE_BPS`.
+const DEFAULT_FEE_BPS: u64 = 20;
+/// The hard ceiling of the platform fee (1 %): a promise to every merchant of this package, which nobody can upgrade.
+const MAX_FEE_BPS: u64 = 100;
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -77,6 +82,7 @@ const ENotExpired: u64 = 17;
 const EZeroUnits: u64 = 18;
 const EBadRecipient: u64 = 19;
 const EZeroMinimum: u64 = 20;
+const EFeeTooHigh: u64 = 21;
 
 // ── Objects ──────────────────────────────────────────────────────────────────
 
@@ -103,6 +109,18 @@ public struct Merchant has key {
     ledger: Table<vector<u8>, u64>,
 }
 
+/// Created once when the package is published, then shared: where the platform fee goes and how much it is.
+public struct PlatformConfig has key {
+    id: UID,
+    treasury: address,
+    fee_bps: u64,
+}
+
+/// Authorises changes to `PlatformConfig` (minted to the publisher; on mainnet, held by the entity's multisig).
+public struct PlatformAdminCap has key, store {
+    id: UID,
+}
+
 public struct MerchantCap has key, store {
     id: UID,
     merchant_id: ID,
@@ -126,6 +144,8 @@ public struct Paid has copy, drop {
     /// 0 when the payment extends no ledger.
     paid_until_ms: u64,
     nonce: vector<u8>,
+    /// Of `amount`, what went to the platform treasury; the merchant's recipient received the rest.
+    platform_fee: u64,
 }
 
 // Every governance change has its own event carrying the old and new values, so a watcher can alert on (and stop
@@ -168,6 +188,14 @@ public struct PausedChanged has copy, drop {
     paused: bool,
 }
 
+public struct PlatformConfigChanged has copy, drop {
+    config_id: ID,
+    old_treasury: address,
+    treasury: address,
+    old_fee_bps: u64,
+    fee_bps: u64,
+}
+
 public struct LimitsChanged has copy, drop {
     merchant_id: ID,
     max_units: u64,
@@ -175,6 +203,47 @@ public struct LimitsChanged has copy, drop {
 }
 
 // ── Creation ─────────────────────────────────────────────────────────────────
+
+fun init(ctx: &mut TxContext) {
+    transfer::share_object(PlatformConfig { id: object::new(ctx), treasury: ctx.sender(), fee_bps: DEFAULT_FEE_BPS });
+    transfer::public_transfer(PlatformAdminCap { id: object::new(ctx) }, ctx.sender());
+}
+
+/// The platform fee for `amount` (rounded down).
+public fun platform_fee(config: &PlatformConfig, amount: u64): u64 {
+    (((amount as u128) * (config.fee_bps as u128) / 10_000) as u64)
+}
+
+public fun platform_treasury(config: &PlatformConfig): address { config.treasury }
+
+public fun platform_fee_bps(config: &PlatformConfig): u64 { config.fee_bps }
+
+public fun max_fee_bps(): u64 { MAX_FEE_BPS }
+
+public fun set_platform_fee_bps(_: &PlatformAdminCap, config: &mut PlatformConfig, fee_bps: u64) {
+    assert!(fee_bps <= MAX_FEE_BPS, EFeeTooHigh);
+    let old_fee_bps = config.fee_bps;
+    config.fee_bps = fee_bps;
+    config_changed(config, config.treasury, old_fee_bps);
+}
+
+/// The treasury is never the zero address (fees sent there would be lost).
+public fun set_platform_treasury(_: &PlatformAdminCap, config: &mut PlatformConfig, treasury: address) {
+    assert!(treasury != @0x0, EBadRecipient);
+    let old_treasury = config.treasury;
+    config.treasury = treasury;
+    config_changed(config, old_treasury, config.fee_bps);
+}
+
+fun config_changed(config: &PlatformConfig, old_treasury: address, old_fee_bps: u64) {
+    event::emit(PlatformConfigChanged {
+        config_id: object::id(config),
+        old_treasury,
+        treasury: config.treasury,
+        old_fee_bps,
+        fee_bps: config.fee_bps,
+    });
+}
 
 /// Creates (and shares) a merchant; returns its capability to the caller. Permissionless.
 public fun create_merchant(
@@ -238,6 +307,7 @@ public fun quote_message(
 /// is extended by `units × period_ms` from the later of now and its current end.
 #[allow(lint(self_transfer))]
 public fun pay<T>(
+    config: &PlatformConfig,
     merchant: &mut Merchant,
     session: vector<u8>,
     amount: u64,
@@ -285,9 +355,13 @@ public fun pay<T>(
     );
     assert!(ed25519::ed25519_verify(&signature, &merchant.quote_key, &msg), EBadSignature);
 
-    // Exact take, change back in the same transaction.
+    // Exact take (the platform fee out of it, the rest to the merchant), change back in the same transaction.
     assert!(payment.value() >= amount, EInsufficientPayment);
-    let take = payment.split(amount, ctx);
+    let mut take = payment.split(amount, ctx);
+    let fee = platform_fee(config, amount);
+    if (fee > 0) {
+        transfer::public_transfer(take.split(fee, ctx), config.treasury);
+    };
     transfer::public_transfer(take, merchant.recipient);
     if (payment.value() > 0) {
         transfer::public_transfer(payment, ctx.sender());
@@ -324,6 +398,7 @@ public fun pay<T>(
         subscription_ref,
         paid_until_ms,
         nonce,
+        platform_fee: fee,
     });
 }
 
@@ -465,6 +540,9 @@ public fun pending_recipient(merchant: &Merchant): Option<PendingRecipient> { me
 
 #[test_only]
 public fun merchant_id_of(cap: &MerchantCap): ID { cap.merchant_id }
+
+#[test_only]
+public fun init_for_testing(ctx: &mut TxContext) { init(ctx) }
 
 #[test_only]
 public fun recipient_proposed_for_testing(merchant_id: ID, current: address, proposed: address, effective_ms: u64): RecipientProposed {
