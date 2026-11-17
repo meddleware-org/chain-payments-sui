@@ -43,6 +43,12 @@ jobs:
           # The release asset suiup downloads is not checksum-verified by suiup itself: pin the binary.
           echo "c86c0481a44174dfa17af89e71292d6fba5df267c66722ae6797e8793a22f7f1  $(command -v sui)" | sha256sum -c -
 
+      - name: Quote vectors match chain-payments-service
+        # The service keeps a copy (fixtures/quote-vectors.json) and pins this repo's commit; a change here fails until
+        # the service's copy is the same.
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/meddleware-org/chain-payments-service/main/fixtures/quote-vectors.json" -o /tmp/service-vectors.json
+          cmp /tmp/service-vectors.json tests/vectors.json
       - name: Build (lints on, warnings are errors)
         run: sui move build --build-env testnet --lint --warnings-are-errors
 

@@ -713,3 +713,19 @@ fun every_negative_vector_fails_verification() {
     // And the basic vector itself still does (the negatives fail because of their change, not the key).
     assert!(sui::ed25519::ed25519_verify(&vectors::basic_signature(), &vectors::public_key(), &vectors::basic_message()));
 }
+
+#[test]
+fun cancelling_with_nothing_pending_changes_nothing() {
+    let (mut s, clock) = setup();
+    s.next_tx(OWNER);
+    let cap = s.take_from_sender<MerchantCap>();
+    let mut m = s.take_shared<Merchant>();
+    chain_payments::cancel_recipient(&cap, &mut m);
+    assert!(chain_payments::pending_recipient(&m).is_none());
+    assert!(chain_payments::recipient(&m) == RECIPIENT);
+    assert!(sui::event::events_by_type<chain_payments::RecipientProposalCancelled>().length() == 0);
+    ts::return_shared(m);
+    s.return_to_sender(cap);
+    clock.destroy_for_testing();
+    s.end();
+}
