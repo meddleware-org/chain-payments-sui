@@ -1,0 +1,12 @@
+# Pinned GitHub Action SHAs stay current (the package has no npm or Cargo dependencies; the Sui framework revision is
+# Move.lock's and moves with the CLI pin in move-ci.yml).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ['*']

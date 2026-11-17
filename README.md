@@ -26,4 +26,18 @@ Testnet deployment: see [deployments.json](deployments.json). The off-chain side
 `coin_type` is `type_name::with_defining_ids<T>()` as a string (64 hex digits without `0x`, then `::module::Name`). Vectors:
 [tests/vectors.json](tests/vectors.json).
 
+## Scripts
+
+`scripts/publish.sh` is the only script that signs. It has no dry run: every step below sends a transaction from the active
+`sui` address after the preflight (active env, chain identifier, CLI toolchain against `Published.toml`, and on mainnet
+`EXPECTED_SIGNER` plus `MAINNET_CONFIRM=1`).
+
+| Command | What it does | If it stops part-way |
+| --- | --- | --- |
+| `scripts/publish.sh testnet` | publishes the package; records the id, UpgradeCap and digest in `deployments.json` (the CLI writes `Published.toml`); refuses to publish over a recorded package unless `REPLACE_PUBLISHED=1` | the script prints the `sui client tx-block <digest> --json` to read the ids from |
+| `MERCHANT_RECIPIENT=0x… QUOTE_PUBLIC_KEY=… SUI_MIN_PER_UNIT=… scripts/publish.sh testnet --create-merchant` | creates a merchant (cap to the active address), records it, then accepts each configured coin | the merchant is recorded first; a failed `set_accepted` prints the exact `sui client ptb` command that resumes it |
+
+Mainnet: the same commands with the maintainer's key, `EXPECTED_SIGNER` and `MAINNET_CONFIRM=1`; the recipient must be the
+entity's multisig, never the deploy key. The UpgradeCap's custody is not yet decided for mainnet (see the audit, B.3).
+
 Licence: [0BSD](LICENSE).

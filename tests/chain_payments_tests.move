@@ -55,6 +55,12 @@ fun message_matches_the_vectors() {
         5000, 2, MONTH_MS, b"acct1", 61_000, b"n1",
     );
     assert!(msg == vectors::basic_message());
+    // Every shared vector, not only the first: the service signs each of these byte strings.
+    let merchant = object::id_from_address(@0x034401905bebdf8c04f3cd5f04f442a39372c8dc321c29edfb4f9cb30b23ab96);
+    let sui = std::type_name::with_defining_ids<SUI>().into_string();
+    assert!(chain_payments::quote_message(merchant, b"s2", sui, 2500, 1, MONTH_MS, b"acct1", 61_000, b"n2") == vectors::second_message());
+    assert!(chain_payments::quote_message(merchant, b"s3", sui, 30_000, 12, MONTH_MS, b"acct1", 61_000, b"n3") == vectors::too_far_message());
+    assert!(chain_payments::quote_message(merchant, b"s4", sui, 5000, 1, 0, b"", 61_000, b"n4") == vectors::one_off_message());
     clock.destroy_for_testing();
     s.end();
 }
@@ -271,6 +277,24 @@ fun a_key_must_be_32_bytes() {
     let mut s = ts::begin(OWNER);
     let cap = chain_payments::create_merchant(RECIPIENT, x"00", 12, MONTH_MS, s.ctx());
     chain_payments::destroy_cap_for_testing(cap);
+    abort 99
+}
+
+#[test, expected_failure(abort_code = chain_payments::EBadRecipient)]
+fun a_merchant_cannot_pay_the_zero_address() {
+    let mut s = ts::begin(OWNER);
+    let cap = chain_payments::create_merchant(@0x0, vectors::public_key(), 12, MONTH_MS, s.ctx());
+    chain_payments::destroy_cap_for_testing(cap);
+    abort 99
+}
+
+#[test, expected_failure(abort_code = chain_payments::EBadRecipient)]
+fun the_zero_address_cannot_be_proposed() {
+    let (mut s, clock) = setup();
+    s.next_tx(OWNER);
+    let cap = s.take_from_sender<MerchantCap>();
+    let mut m = s.take_shared<Merchant>();
+    chain_payments::propose_recipient(&cap, &mut m, @0x0, &clock);
     abort 99
 }
 

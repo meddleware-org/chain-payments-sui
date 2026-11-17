@@ -75,6 +75,7 @@ const ERecipientNotYetDue: u64 = 15;
 const EBadLimits: u64 = 16;
 const ENotExpired: u64 = 17;
 const EZeroUnits: u64 = 18;
+const EBadRecipient: u64 = 19;
 
 // ── Objects ──────────────────────────────────────────────────────────────────
 
@@ -142,6 +143,7 @@ public fun create_merchant(
     ctx: &mut TxContext,
 ): MerchantCap {
     assert!(quote_key.length() == 32, EBadKey);
+    assert!(recipient != @0x0, EBadRecipient);
     check_limits(max_units, max_ahead_ms);
     let merchant = Merchant {
         id: object::new(ctx),
@@ -377,9 +379,11 @@ public fun set_limits(cap: &MerchantCap, merchant: &mut Merchant, max_units: u64
     updated(merchant, b"limits");
 }
 
-/// Proposes a new recipient; it takes effect after `RECIPIENT_DELAY_MS` with `confirm_recipient`.
+/// Proposes a new recipient; it takes effect after `RECIPIENT_DELAY_MS` with `confirm_recipient`. The zero address
+/// (where coins are lost) is refused, as at creation.
 public fun propose_recipient(cap: &MerchantCap, merchant: &mut Merchant, recipient: address, clock: &Clock) {
     check_cap(cap, merchant);
+    assert!(recipient != @0x0, EBadRecipient);
     merchant.pending_recipient = option::some(PendingRecipient {
         recipient,
         effective_ms: clock.timestamp_ms() + RECIPIENT_DELAY_MS,
