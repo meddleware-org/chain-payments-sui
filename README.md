@@ -41,6 +41,11 @@ Testnet deployment: see [deployments.json](deployments.json). The off-chain side
 Mainnet: the same commands with the maintainer's key, `EXPECTED_SIGNER` and `MAINNET_CONFIRM=1`; the recipient must be the
 entity's multisig, never the deploy key. Publishing on mainnet burns the UpgradeCap straight away.
 
+## Custody
+
+See [CUSTODY.md](CUSTODY.md): the PlatformAdminCap and the platform's MerchantCaps go to the entity's multisig with
+`scripts/transfer-authority.sh`.
+
 ## Releases
 
 Every release is a fresh package with its UpgradeCap burned: nobody, the publisher included, can change code that merchants

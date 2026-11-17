@@ -187,7 +187,7 @@ Supported versions and Disclosure, and records that a minimum is never zero.
 
 ### F2 — Upgrade and merchant authority held by the publisher EOA; no custody record or tooling
 
-**Severity:** Low   **Disposition:** DEFERRED (mainnet-blocked; FU-0120, FU-0103; OQ3 decided: fresh package, cap burned)
+**Severity:** Low   **Disposition:** MITIGATED (2026-11-17: UpgradeCap burned at publish; CUSTODY.md and `transfer-authority.sh` written and rehearsed on testnet; the mainnet hand-over is FU-0103)
 **Where:** `deployments.json` (`publisher`, `upgradeCap`, `merchants[].merchantCap`); `scripts/publish.sh` header ("transfer
 it to the entity's multisig afterwards, CUSTODY.md").
 **Issue:** On testnet, the UpgradeCap `0x3f6ec244…` and merchant #1's `MerchantCap` `0xc57f292e…` are owned by

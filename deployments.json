@@ -21,8 +21,13 @@
         "merchantId": "0xd92a3ce208124219667d5b17a939617cc4dc816c093b91fd80f1f164e635d5e5",
         "merchantCap": "0x0e6dcc95ae7cf4fd4e159d109bc0108172ff8770c37ee65c65758804d5ce56f2",
         "recipient": "0xa991ae11b0785718cd3ad1c616e804a4c083f431b3144bb845bdec651164864a",
-        "note": "throwaway test merchant for scripts/e2e-testnet.sh: its quote key is the public TEST key (seed 0x01 * 32, tests/vectors.json); never used for real payments."
+        "note": "throwaway test merchant for scripts/e2e-testnet.sh: its quote key is the public TEST key (seed 0x01 * 32, tests/vectors.json); never used for real payments.",
+        "merchantCapOwner": "0x9d909846a8dd9186f56a36e152e7614f9b8a85b59925ead12d56c92f471a5151"
       }
-    ]
+    ],
+    "custody": {
+      "multisigAddress": "0x9d909846a8dd9186f56a36e152e7614f9b8a85b59925ead12d56c92f471a5151",
+      "platformAdminCapOwner": "0x9d909846a8dd9186f56a36e152e7614f9b8a85b59925ead12d56c92f471a5151"
+    }
   }
 }

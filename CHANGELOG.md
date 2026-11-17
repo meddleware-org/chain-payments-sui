@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased (tests only; no package change)
+## Unreleased (tooling and tests; no package change)
 
+- `CUSTODY.md`, `scripts/transfer-authority.sh` (PlatformAdminCap and chosen MerchantCaps to a verified multisig) and
+  `scripts/multisig-address.sh`; rehearsed on testnet with a multisig-signed admin call.
 - Ten negative quote vectors (`negative` in tests/vectors.json): the basic quote's signature with each field changed, and
   a truncated signature; `every_negative_vector_fails_verification` checks them all.
 
