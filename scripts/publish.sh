@@ -4,6 +4,13 @@
 # =============================================================================
 #   ./scripts/publish.sh localnet|testnet|mainnet
 #   ./scripts/publish.sh localnet|testnet|mainnet --create-merchant
+#   ./scripts/publish.sh localnet|testnet|mainnet --burn-upgrade-cap
+#
+# Release policy (ADR-0011): every release is a FRESH package whose UpgradeCap is burned (0x2::package::make_immutable),
+# so nobody, the publisher included, can change the code merchants and payers rely on. A fix is a new package and new
+# merchants on it; the old package keeps working for what was already paid. On mainnet the burn is part of publishing
+# (a typed BURN, or BURN_CONFIRM=BURN); elsewhere it is --burn-upgrade-cap, to rehearse it. The burn is recorded only after
+# the cap is definitely gone.
 #
 # Publishing records the package id and the UpgradeCap in deployments.json (and Published.toml, written by the CLI).
 # --create-merchant (on an already published network) creates a merchant and accepts the coins below; the MerchantCap goes
@@ -64,14 +71,68 @@ created_of_type() { # <json> <package> <module> <name>
       | .objectId] | if length == 1 then .[0] else empty end' <<< "$1"
 }
 
+# object_state <id>: found | gone | unknown (as in token-issuance-template-sui's publish.sh). Only "gone" means consumed.
+object_state() {
+  local want out rc=0 json
+  want=$(printf '%s' "${1#0x}" | tr '[:upper:]' '[:lower:]' | sed 's/^0*//')
+  out=$(sui client object "$1" --json 2>&1) || rc=$?
+  json=$(printf '%s\n' "$out" | awk '/^{/,0')
+  if [[ $rc -eq 0 ]]; then
+    if jq -e '.objectId != null' <<< "$json" > /dev/null 2>&1; then echo found; return 0; fi
+    if jq -e '(.error.code // "") | test("^(deleted|notExists)$")' <<< "$json" > /dev/null 2>&1; then echo gone; return 0; fi
+  elif printf '%s\n' "$out" | tr '[:upper:]' '[:lower:]' | grep -Eq "object 0x0*${want} not found"; then
+    echo gone; return 0
+  fi
+  printf 'sui client object %s: could not tell whether the object exists (exit %s):\n%s\n' "$1" "$rc" "$out" >&2
+  echo unknown
+}
+
+# burn_upgrade_cap: make the recorded package immutable, then record it (only once the cap is gone).
+burn_upgrade_cap() {
+  local cap out answer state tmp
+  cap="$(jq -r --arg n "$net" '.[$n].upgradeCap // empty' deployments.json)"
+  [[ -n "$cap" ]] || { echo "${net}: no UpgradeCap recorded (already burned, or not published)" >&2; exit 2; }
+  if [[ "${BURN_CONFIRM:-}" != BURN ]]; then
+    read -r -p "Burn UpgradeCap ${cap} on ${net}? The package can then never be changed. Type BURN: " answer
+    [[ "$answer" == BURN ]] || { echo "not burned; later: ./scripts/publish.sh ${net} --burn-upgrade-cap" >&2; exit 1; }
+  fi
+  out="$(sui client call --package 0x2 --module package --function make_immutable --args "$cap" --gas-budget "$GAS_BUDGET" --json)" || out=""
+  succeeded "$out" || { echo "make_immutable failed: $(jq -c '.effects.status // .' <<< "$out" 2> /dev/null | head -c 400)" >&2; exit 1; }
+  state="$(object_state "$cap")"
+  [[ "$state" == gone ]] || { echo "make_immutable succeeded but the UpgradeCap is ${state}; check by hand before recording" >&2; exit 1; }
+  tmp="$(mktemp)"
+  jq --arg n "$net" --arg d "$(jq -r '.digest' <<< "$out")" \
+    '.[$n] |= ((del(.upgradeCap)) + {immutable: true, burnDigest: $d})' deployments.json > "$tmp"
+  mv "$tmp" deployments.json
+  echo "${net}: package is immutable (UpgradeCap ${cap} burned, tx $(jq -r '.digest' <<< "$out"))"
+}
+
+if [[ "$mode" == --burn-upgrade-cap ]]; then
+  burn_upgrade_cap
+  exit 0
+fi
+
 if [[ "$mode" == publish ]]; then
   existing="$(jq -r --arg n "$net" '.[$n].packageId // empty' deployments.json)"
   if [[ -n "$existing" && "${REPLACE_PUBLISHED:-}" != 1 ]]; then
     echo "${net} already records package ${existing}; set REPLACE_PUBLISHED=1 to publish a new one over it" >&2
     exit 2
   fi
-  out="$(sui client publish --gas-budget "$GAS_BUDGET" --json)"
-  succeeded "$out" || { echo "publish failed: $(jq -c '.effects.status // .' <<< "$out" | head -c 400)" >&2; exit 1; }
+  if [[ "$net" == localnet ]]; then
+    # The package defines testnet and mainnet only; a localnet publication is a test publication, recorded in a
+    # throwaway pubfile so Published.toml is never touched (localnet is regenerated at will).
+    publish=(sui client test-publish --build-env testnet --pubfile-path "$(mktemp -u).localnet.toml")
+  else
+    publish=(sui client publish)
+  fi
+  errs="$(mktemp)"
+  out="$("${publish[@]}" --gas-budget "$GAS_BUDGET" --json 2> "$errs")" || true
+  if ! succeeded "$out"; then
+    echo "publish failed: $(jq -c '.effects.status // .' <<< "$out" 2> /dev/null | head -c 400)" >&2
+    grep -v '^\(INCLUDING DEPENDENCY\|BUILDING\)' "$errs" | head -20 >&2
+    exit 1
+  fi
+  rm -f "$errs"
   pkg="$(jq -r '.objectChanges[] | select(.type == "published") | .packageId' <<< "$out")"
   cap="$(created_of_type "$out" 0x2 package UpgradeCap)"
   digest="$(jq -r '.digest // empty' <<< "$out")"
@@ -84,6 +145,7 @@ if [[ "$mode" == publish ]]; then
     '.[$n] = ((.[$n] // {}) + {packageId: $p, upgradeCap: $c, publishDigest: $d, publisher: $s, publishedAt: $t})' deployments.json > "$tmp"
   mv "$tmp" deployments.json
   echo "published ${net}: package ${pkg} (UpgradeCap ${cap}, tx ${digest})"
+  if [[ "$net" == mainnet ]]; then burn_upgrade_cap; fi
   exit 0
 fi
 

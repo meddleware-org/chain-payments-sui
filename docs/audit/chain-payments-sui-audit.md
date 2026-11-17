@@ -187,7 +187,7 @@ Supported versions and Disclosure, and records that a minimum is never zero.
 
 ### F2 — Upgrade and merchant authority held by the publisher EOA; no custody record or tooling
 
-**Severity:** Low   **Disposition:** DEFERRED (mainnet-blocked; FU-0120, FU-0103; decision OQ3)
+**Severity:** Low   **Disposition:** DEFERRED (mainnet-blocked; FU-0120, FU-0103; OQ3 decided: fresh package, cap burned)
 **Where:** `deployments.json` (`publisher`, `upgradeCap`, `merchants[].merchantCap`); `scripts/publish.sh` header ("transfer
 it to the entity's multisig afterwards, CUSTODY.md").
 **Issue:** On testnet, the UpgradeCap `0x3f6ec244…` and merchant #1's `MerchantCap` `0xc57f292e…` are owned by
@@ -236,7 +236,7 @@ is tested on a v1 merchant. That upgrade is recorded in FU-0121.
 
 ### F5 — The recipient timelock protects only if a proposal is noticed, and nothing watches
 
-**Severity:** Medium   **Disposition:** DEFERRED (FU-0122; event design is OQ1)
+**Severity:** Medium   **Disposition:** DEFERRED (FU-0122, the watcher; OQ1 decided: typed events, in source)
 **Where:** `propose_recipient` (`:384`) emits `MerchantUpdated { what: b"recipient_proposed" }`, which carries no address.
 Neither the service nor the alert rules (`k8s/…/vmalert/rules/alerts.yaml`, group `chain-payments`) read the merchant
 object.
@@ -265,7 +265,7 @@ funds are not at risk.
 
 - `publish.sh` refuses a non-positive `SUI_MIN_PER_UNIT` or `USDC_MIN_PER_UNIT` (F13), and `SECURITY.md` states the rule.
 - Merchant #1's testnet minimums are 1 000 000 MIST and 1 000 USDC units (read on-chain).
-- An on-chain refusal of zero is a behaviour change to a published function, so it is OQ2.
+- 2026-11-17: `set_accepted` now refuses zero on-chain (OQ2; test `a_zero_minimum_is_refused`).
 - A floor of 1 MIST is equally weak: the real control is a floor near the real price. Choosing it is merchant policy,
   revisited at the mainnet merchant setup (FU-0103).
 
@@ -674,13 +674,14 @@ neither mode is a custody step. The custody scripts that will need a dry run are
 
 ## Open questions (`OQ#`)
 
-- **OQ1** — Add `RecipientProposed { merchant_id, recipient, effective_ms }` and `QuoteKeyChanged { merchant_id, quote_key }`
-  events in the next upgrade (a public interface addition), or rely on watchers reading `pending_recipient` and `quote_key`?
-  (F5)
-- **OQ2** — Should `set_accepted` refuse a zero minimum on-chain (a behaviour change to a published function, shipped by an
-  upgrade), or stay merchant policy enforced by tooling? (F6)
-- **OQ3** — The mainnet UpgradeCap policy: (a) multisig-governed and upgradeable (version gating and `migrate`; the oracle path
-  of FU-0105 needs an upgrade), or (b) a fresh package per release with the cap burned, as access-gate-sui does? (F2)
+- **OQ1** — DECIDED 2026-11-17 (maintainer): typed events. Every governance change emits its own event with the old and
+  new values (`RecipientProposed`, `RecipientProposalCancelled`, `RecipientChanged`, `QuoteKeyChanged`, `AcceptedChanged`,
+  `PausedChanged`, `LimitsChanged`), replacing `MerchantUpdated`. In source; ships with the next fresh package. (F5)
+- **OQ2** — DECIDED 2026-11-17 (maintainer): `set_accepted` refuses a zero minimum (`EZeroMinimum` = 20). The useful floor
+  is per coin and price-dependent, so it stays merchant configuration (README, "Choosing minimums"). (F6)
+- **OQ3** — DECIDED 2026-11-17 (maintainer): (b). Every release is a fresh package with its UpgradeCap burned;
+  `publish.sh` burns it as part of a mainnet publish (rehearsed on localnet 2026-11-17). Version gating stays as defence in
+  depth but no upgrade will ever run on mainnet, so F4's `migrate` is moot there. (F2)
 
 ## Risks (residual)
 

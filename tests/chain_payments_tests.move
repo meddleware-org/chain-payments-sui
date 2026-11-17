@@ -549,3 +549,52 @@ fun zero_max_ahead_is_refused() {
     chain_payments::destroy_cap_for_testing(cap);
     abort 99
 }
+
+#[test, expected_failure(abort_code = chain_payments::EZeroMinimum)]
+fun a_zero_minimum_is_refused() {
+    let (mut s, clock) = setup();
+    s.next_tx(OWNER);
+    let cap = s.take_from_sender<MerchantCap>();
+    let mut m = s.take_shared<Merchant>();
+    chain_payments::set_accepted<OTHER>(&cap, &mut m, 0);
+    abort 99
+}
+
+#[test]
+fun governance_changes_emit_their_old_and_new_values() {
+    let (mut s, mut clock) = setup();
+    s.next_tx(OWNER);
+    let cap = s.take_from_sender<MerchantCap>();
+    let mut m = s.take_shared<Merchant>();
+    let id = object::id(&m);
+
+    chain_payments::set_accepted<SUI>(&cap, &mut m, 2000);
+    chain_payments::remove_accepted<SUI>(&cap, &mut m);
+    let accepted = sui::event::events_by_type<chain_payments::AcceptedChanged>();
+    assert!(accepted == vector[
+        chain_payments::accepted_changed_for_testing<SUI>(id, option::some(2000)),
+        chain_payments::accepted_changed_for_testing<SUI>(id, option::none()),
+    ]);
+
+    let new_key = x"0101010101010101010101010101010101010101010101010101010101010101";
+    chain_payments::set_quote_key(&cap, &mut m, new_key);
+    assert!(sui::event::events_by_type<chain_payments::QuoteKeyChanged>() == vector[
+        chain_payments::quote_key_changed_for_testing(id, vectors::public_key(), new_key),
+    ]);
+
+    chain_payments::propose_recipient(&cap, &mut m, FRIEND, &clock);
+    let due = clock.timestamp_ms() + chain_payments::recipient_delay_ms();
+    assert!(sui::event::events_by_type<chain_payments::RecipientProposed>() == vector[
+        chain_payments::recipient_proposed_for_testing(id, RECIPIENT, FRIEND, due),
+    ]);
+    clock.set_for_testing(due);
+    chain_payments::confirm_recipient(&cap, &mut m, &clock);
+    assert!(sui::event::events_by_type<chain_payments::RecipientChanged>() == vector[
+        chain_payments::recipient_changed_for_testing(id, RECIPIENT, FRIEND),
+    ]);
+
+    ts::return_shared(m);
+    s.return_to_sender(cap);
+    clock.destroy_for_testing();
+    s.end();
+}

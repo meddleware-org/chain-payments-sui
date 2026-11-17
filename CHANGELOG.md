@@ -2,6 +2,12 @@
 
 ## Unreleased (source only; the testnet package is still 0.0.1)
 
+- Release policy: every release is a fresh package whose UpgradeCap is burned. `publish.sh` burns it on mainnet as part of
+  publishing (typed `BURN`) and offers `--burn-upgrade-cap` elsewhere; the burn is recorded only once the cap is gone.
+- Typed governance events with old and new values (`RecipientProposed`, `RecipientProposalCancelled`, `RecipientChanged`,
+  `QuoteKeyChanged`, `AcceptedChanged`, `PausedChanged`, `LimitsChanged`) replace `MerchantUpdated`.
+- `set_accepted` refuses a zero minimum (`EZeroMinimum` = 20).
+- `publish.sh localnet` works (a test publication with a throwaway pubfile) and every failed publish shows the CLI's error.
 - `create_merchant` and `propose_recipient` refuse the zero address (`EBadRecipient` = 19). Ships with the next upgrade.
 - `scripts/publish.sh`: CLI toolchain preflight against `Published.toml`, no publish over a recorded package without
   `REPLACE_PUBLISHED=1`, created objects read by their exact types, effects checked on every step, recipient and limits

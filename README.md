@@ -35,9 +35,28 @@ Testnet deployment: see [deployments.json](deployments.json). The off-chain side
 | Command | What it does | If it stops part-way |
 | --- | --- | --- |
 | `scripts/publish.sh testnet` | publishes the package; records the id, UpgradeCap and digest in `deployments.json` (the CLI writes `Published.toml`); refuses to publish over a recorded package unless `REPLACE_PUBLISHED=1` | the script prints the `sui client tx-block <digest> --json` to read the ids from |
+| `scripts/publish.sh localnet\|testnet --burn-upgrade-cap` | burns the recorded UpgradeCap (typed `BURN`, or `BURN_CONFIRM=BURN`); records `immutable` only once the cap is gone | nothing is recorded until the cap is verified gone; re-run to retry |
 | `MERCHANT_RECIPIENT=0x… QUOTE_PUBLIC_KEY=… SUI_MIN_PER_UNIT=… scripts/publish.sh testnet --create-merchant` | creates a merchant (cap to the active address), records it, then accepts each configured coin | the merchant is recorded first; a failed `set_accepted` prints the exact `sui client ptb` command that resumes it |
 
 Mainnet: the same commands with the maintainer's key, `EXPECTED_SIGNER` and `MAINNET_CONFIRM=1`; the recipient must be the
-entity's multisig, never the deploy key. The UpgradeCap's custody is not yet decided for mainnet (see the audit, B.3).
+entity's multisig, never the deploy key. Publishing on mainnet burns the UpgradeCap straight away.
+
+## Releases
+
+Every release is a fresh package with its UpgradeCap burned: nobody, the publisher included, can change code that merchants
+and payers rely on. A fix means a new package, new merchants on it and a service configured for it. The old package keeps
+serving the subscriptions it recorded, and they are still readable through `paid_until`.
+
+## Choosing minimums
+
+`set_accepted` refuses zero. The minimum that matters is the merchant's floor per unit, in each coin's smallest unit: it is
+the most a leaked quote key could undersell by. Set it below the lowest price you expect to quote, not at 1:
+
+- for a stablecoin, about 90 % of one unit's price;
+- for a volatile coin, about a quarter of one unit's current price, so that a fourfold rise in the coin's price still
+  leaves quotes above the floor.
+
+Re-set it (`set_accepted`, which emits `AcceptedChanged`) when the price moves far enough that the service's quotes come
+near it.
 
 Licence: [0BSD](LICENSE).

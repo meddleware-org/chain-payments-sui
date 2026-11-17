@@ -76,6 +76,7 @@ const EBadLimits: u64 = 16;
 const ENotExpired: u64 = 17;
 const EZeroUnits: u64 = 18;
 const EBadRecipient: u64 = 19;
+const EZeroMinimum: u64 = 20;
 
 // ── Objects ──────────────────────────────────────────────────────────────────
 
@@ -127,9 +128,50 @@ public struct Paid has copy, drop {
     nonce: vector<u8>,
 }
 
-public struct MerchantUpdated has copy, drop {
+// Every governance change has its own event carrying the old and new values, so a watcher can alert on (and stop
+// quoting for) an unexpected change from the event alone. The recipient change is the one with a delay: its proposal
+// is public for RECIPIENT_DELAY_MS before it can take effect, which is only useful while someone watches.
+
+public struct RecipientProposed has copy, drop {
     merchant_id: ID,
-    what: vector<u8>,
+    current: address,
+    proposed: address,
+    effective_ms: u64,
+}
+
+public struct RecipientProposalCancelled has copy, drop {
+    merchant_id: ID,
+    proposed: address,
+}
+
+public struct RecipientChanged has copy, drop {
+    merchant_id: ID,
+    old: address,
+    new: address,
+}
+
+public struct QuoteKeyChanged has copy, drop {
+    merchant_id: ID,
+    old_key: vector<u8>,
+    new_key: vector<u8>,
+}
+
+/// `min_per_unit` is none when the coin type is no longer accepted.
+public struct AcceptedChanged has copy, drop {
+    merchant_id: ID,
+    coin_type: AsciiString,
+    min_per_unit: Option<u64>,
+}
+
+public struct PausedChanged has copy, drop {
+    merchant_id: ID,
+    paused: bool,
+}
+
+public struct LimitsChanged has copy, drop {
+    merchant_id: ID,
+    max_units: u64,
+    max_ahead_ms: u64,
 }
 
 // ── Creation ─────────────────────────────────────────────────────────────────
@@ -321,6 +363,8 @@ public fun nonce_used(merchant: &Merchant, nonce: vector<u8>): bool { merchant.n
 
 public fun package_version(): u64 { VERSION }
 
+public fun recipient_delay_ms(): u64 { RECIPIENT_DELAY_MS }
+
 // ── Governance (MerchantCap) ─────────────────────────────────────────────────
 
 fun check_cap(cap: &MerchantCap, merchant: &Merchant) {
@@ -333,20 +377,22 @@ fun check_limits(max_units: u64, max_ahead_ms: u64) {
     assert!(max_ahead_ms > 0 && max_ahead_ms <= HARD_MAX_AHEAD_MS, EBadLimits);
 }
 
-fun updated(merchant: &Merchant, what: vector<u8>) {
-    event::emit(MerchantUpdated { merchant_id: object::id(merchant), what });
-}
-
-/// Accepts coin type `T` (or changes its minimum per unit).
+/// Accepts coin type `T` (or changes its minimum per unit). The minimum is at least 1 of the coin's smallest unit: a
+/// zero minimum would let a quote key sign a payment of nothing.
 public fun set_accepted<T>(cap: &MerchantCap, merchant: &mut Merchant, min_per_unit: u64) {
     check_cap(cap, merchant);
+    assert!(min_per_unit > 0, EZeroMinimum);
     let t = type_name::with_defining_ids<T>();
     if (merchant.accepted.contains(&t)) {
         *merchant.accepted.get_mut(&t) = min_per_unit;
     } else {
         merchant.accepted.insert(t, min_per_unit);
     };
-    updated(merchant, b"accepted");
+    event::emit(AcceptedChanged {
+        merchant_id: object::id(merchant),
+        coin_type: t.into_string(),
+        min_per_unit: option::some(min_per_unit),
+    });
 }
 
 public fun remove_accepted<T>(cap: &MerchantCap, merchant: &mut Merchant) {
@@ -355,20 +401,21 @@ public fun remove_accepted<T>(cap: &MerchantCap, merchant: &mut Merchant) {
     if (merchant.accepted.contains(&t)) {
         merchant.accepted.remove(&t);
     };
-    updated(merchant, b"accepted");
+    event::emit(AcceptedChanged { merchant_id: object::id(merchant), coin_type: t.into_string(), min_per_unit: option::none() });
 }
 
 public fun set_quote_key(cap: &MerchantCap, merchant: &mut Merchant, quote_key: vector<u8>) {
     check_cap(cap, merchant);
     assert!(quote_key.length() == 32, EBadKey);
+    let old_key = merchant.quote_key;
     merchant.quote_key = quote_key;
-    updated(merchant, b"quote_key");
+    event::emit(QuoteKeyChanged { merchant_id: object::id(merchant), old_key, new_key: quote_key });
 }
 
 public fun set_paused(cap: &MerchantCap, merchant: &mut Merchant, paused: bool) {
     check_cap(cap, merchant);
     merchant.paused = paused;
-    updated(merchant, b"paused");
+    event::emit(PausedChanged { merchant_id: object::id(merchant), paused });
 }
 
 public fun set_limits(cap: &MerchantCap, merchant: &mut Merchant, max_units: u64, max_ahead_ms: u64) {
@@ -376,7 +423,7 @@ public fun set_limits(cap: &MerchantCap, merchant: &mut Merchant, max_units: u64
     check_limits(max_units, max_ahead_ms);
     merchant.max_units = max_units;
     merchant.max_ahead_ms = max_ahead_ms;
-    updated(merchant, b"limits");
+    event::emit(LimitsChanged { merchant_id: object::id(merchant), max_units, max_ahead_ms });
 }
 
 /// Proposes a new recipient; it takes effect after `RECIPIENT_DELAY_MS` with `confirm_recipient`. The zero address
@@ -384,17 +431,22 @@ public fun set_limits(cap: &MerchantCap, merchant: &mut Merchant, max_units: u64
 public fun propose_recipient(cap: &MerchantCap, merchant: &mut Merchant, recipient: address, clock: &Clock) {
     check_cap(cap, merchant);
     assert!(recipient != @0x0, EBadRecipient);
-    merchant.pending_recipient = option::some(PendingRecipient {
-        recipient,
-        effective_ms: clock.timestamp_ms() + RECIPIENT_DELAY_MS,
+    let effective_ms = clock.timestamp_ms() + RECIPIENT_DELAY_MS;
+    merchant.pending_recipient = option::some(PendingRecipient { recipient, effective_ms });
+    event::emit(RecipientProposed {
+        merchant_id: object::id(merchant),
+        current: merchant.recipient,
+        proposed: recipient,
+        effective_ms,
     });
-    updated(merchant, b"recipient_proposed");
 }
 
 public fun cancel_recipient(cap: &MerchantCap, merchant: &mut Merchant) {
     check_cap(cap, merchant);
-    merchant.pending_recipient = option::none();
-    updated(merchant, b"recipient_cancelled");
+    if (merchant.pending_recipient.is_some()) {
+        let p = merchant.pending_recipient.extract();
+        event::emit(RecipientProposalCancelled { merchant_id: object::id(merchant), proposed: p.recipient });
+    };
 }
 
 public fun confirm_recipient(cap: &MerchantCap, merchant: &mut Merchant, clock: &Clock) {
@@ -402,8 +454,9 @@ public fun confirm_recipient(cap: &MerchantCap, merchant: &mut Merchant, clock: 
     assert!(merchant.pending_recipient.is_some(), ENoPendingRecipient);
     let p = merchant.pending_recipient.extract();
     assert!(clock.timestamp_ms() >= p.effective_ms, ERecipientNotYetDue);
+    let old = merchant.recipient;
     merchant.recipient = p.recipient;
-    updated(merchant, b"recipient");
+    event::emit(RecipientChanged { merchant_id: object::id(merchant), old, new: p.recipient });
 }
 
 public fun pending_recipient(merchant: &Merchant): Option<PendingRecipient> { merchant.pending_recipient }
@@ -412,6 +465,26 @@ public fun pending_recipient(merchant: &Merchant): Option<PendingRecipient> { me
 
 #[test_only]
 public fun merchant_id_of(cap: &MerchantCap): ID { cap.merchant_id }
+
+#[test_only]
+public fun recipient_proposed_for_testing(merchant_id: ID, current: address, proposed: address, effective_ms: u64): RecipientProposed {
+    RecipientProposed { merchant_id, current, proposed, effective_ms }
+}
+
+#[test_only]
+public fun recipient_changed_for_testing(merchant_id: ID, old: address, new: address): RecipientChanged {
+    RecipientChanged { merchant_id, old, new }
+}
+
+#[test_only]
+public fun quote_key_changed_for_testing(merchant_id: ID, old_key: vector<u8>, new_key: vector<u8>): QuoteKeyChanged {
+    QuoteKeyChanged { merchant_id, old_key, new_key }
+}
+
+#[test_only]
+public fun accepted_changed_for_testing<T>(merchant_id: ID, min_per_unit: Option<u64>): AcceptedChanged {
+    AcceptedChanged { merchant_id, coin_type: type_name::with_defining_ids<T>().into_string(), min_per_unit }
+}
 
 #[test_only]
 public fun set_version_for_testing(merchant: &mut Merchant, version: u64) { merchant.version = version; }
