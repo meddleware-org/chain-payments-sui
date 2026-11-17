@@ -698,3 +698,18 @@ fun a_zero_fee_sends_the_whole_amount_to_the_merchant() {
     clock.destroy_for_testing();
     s.end();
 }
+
+#[test]
+fun every_negative_vector_fails_verification() {
+    // A valid signature with any one quote field changed, or truncated, never verifies (tests/vectors.json "negative").
+    let msgs = vectors::negative_messages();
+    let sigs = vectors::negative_signatures();
+    assert!(msgs.length() == 10 && sigs.length() == 10);
+    let mut i = 0;
+    while (i < msgs.length()) {
+        assert!(!sui::ed25519::ed25519_verify(&sigs[i], &vectors::public_key(), &msgs[i]));
+        i = i + 1;
+    };
+    // And the basic vector itself still does (the negatives fail because of their change, not the key).
+    assert!(sui::ed25519::ed25519_verify(&vectors::basic_signature(), &vectors::public_key(), &vectors::basic_message()));
+}
